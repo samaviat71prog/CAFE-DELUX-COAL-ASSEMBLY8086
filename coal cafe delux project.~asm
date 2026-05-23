@@ -1,0 +1,1374 @@
+.MODEL SMALL
+.STACK 200H
+
+.DATA
+; ===== MENUS =====
+dineMsg     DB 13,10,"====== CAFE DELUXE ======",13,10
+DB "1. Dine In  (GST 8%)",13,10
+DB "2. Take Away (GST 5%)",13,10
+DB "Select: $"
+
+namePrompt  DB 13,10,"Enter Customer Name: $"
+
+mainMenu    DB 13,10,"====== MAIN MENU ======",13,10
+DB "1. Burger",13,10
+DB "2. Pizza  (200)",13,10
+DB "3. Pasta  (150)",13,10
+DB "4. Coffee",13,10
+DB "5. View Order",13,10
+DB "6. Generate Bill",13,10
+DB "Select Option: $"
+
+burgerMenu  DB 13,10,"--- Burger Menu ---",13,10
+DB "1. Veg Burger   (100)",13,10
+DB "2. Egg Burger   (120)",13,10
+DB "3. Salad Burger (110)",13,10
+DB "Select: $"
+
+coffeeMenu  DB 13,10,"--- Coffee Menu ---",13,10
+DB "1. Latte        (80)",13,10
+DB "2. Iced Americ. (90)",13,10
+DB "3. Cappuccino   (85)",13,10
+DB "Select: $"
+
+qtyMsg      DB 13,10,"Quantity (1-9): $"
+invalidMsg  DB 13,10,"Invalid! Try again.",13,10,"$"
+newline     DB 13,10,"$"
+nextMsg     DB 13,10,"1. Next Customer",13,10
+DB "2. End Day & Exit",13,10
+DB "Select: $"
+
+; ===== BILL STRINGS =====
+billHead    DB 13,10,"====== CAFE DELUXE BILL ======",13,10,"$"
+ordNoLbl    DB "Order No  : $"
+custLbl     DB "Customer  : $"
+dineInLbl   DB "Type      : Dine In",13,10,"$"
+takeAwayLbl DB "Type      : Take Away",13,10,"$"
+divLine     DB "------------------------------",13,10,"$"
+lbl_vegbur  DB "Veg Burger    x$"
+lbl_eggbur  DB "Egg Burger    x$"
+lbl_salbur  DB "Salad Burger  x$"
+lbl_pizza   DB "Pizza         x$"
+lbl_pasta   DB "Pasta         x$"
+lbl_latte   DB "Latte         x$"
+lbl_amer    DB "Iced Americ.  x$"
+lbl_cappu   DB "Cappuccino    x$"
+spaceEq     DB " = Rs.$"
+subtotalMsg DB "Subtotal   : Rs.$"
+gst8Msg     DB "GST(8%)    : Rs.$"
+gst5Msg     DB "GST(5%)    : Rs.$"
+grandMsg    DB "GRAND TOTAL: Rs.$"
+thanksMsg   DB 13,10,"Thank you! Visit again!",13,10,"$"
+viewHead    DB 13,10,"--- Your Order So Far ---",13,10,"$"
+emptyMsg    DB 13,10,"No items ordered yet!",13,10,"$"
+runSubMsg   DB "Running Total: Rs.$"
+
+; ===== PRICES =====
+vegBurgerPrice   DW 100
+eggBurgerPrice   DW 120
+saladBurgerPrice DW 110
+pizzaPrice       DW 200
+pastaPrice       DW 150
+lattePrice       DW  80
+americanoPrice   DW  90
+cappuccinoPrice  DW  85
+
+; ===== ORDER DATA =====
+qty1 DB 0
+qty2 DB 0
+qty3 DB 0
+qty4 DB 0
+qty5 DB 0
+qty6 DB 0
+qty7 DB 0
+qty8 DB 0
+subtotal  DW 0
+gst       DW 0
+grand     DW 0
+orderType DB 0
+tempQty   DB 0
+
+; ===== CUSTOMER / DAY DATA =====
+orderNum    DW 1          ; auto order counter
+dayTotal    DW 0          ; sum of all grand totals
+dayCustomers DW 0         ; customers served today
+daySold1    DW 0
+daySold2    DW 0
+daySold3    DW 0
+daySold4    DW 0
+daySold5    DW 0
+daySold6    DW 0
+daySold7    DW 0
+daySold8    DW 0
+
+; ===== NAME BUFFER =====
+; We read name char by char, store in nameArr, length in nameLen
+nameArr     DB 20 DUP(20H)  ; 20 spaces
+nameLen     DB 0
+
+; ===== FILE =====
+fileName    DB "orders.txt",0      ; saves in same folder as your .asm file
+fileHandle  DW 0
+crlf        DB 13,10,0
+eqRs        DB " = Rs."
+numByte     DB 0                   ; single byte buffer for file digit writes
+
+; --- File label strings (no $ terminator, we use length-based writes) ---
+fDiv        DB "==============================",13,10,0
+fRecHdr     DB "--- ORDER RECORD ---",13,10,0
+fOrdLbl     DB "Order No  : ",0
+fCustLbl    DB "Customer  : ",0
+fDineLbl    DB "Type      : Dine In",13,10,0
+fTakeLbl    DB "Type      : Take Away",13,10,0
+fVegL       DB "  Veg Burger    x",0
+fEggL       DB "  Egg Burger    x",0
+fSalL       DB "  Salad Burger  x",0
+fPizL       DB "  Pizza         x",0
+fPasL       DB "  Pasta         x",0
+fLatL       DB "  Latte         x",0
+fAmrL       DB "  Iced Americ.  x",0
+fCapL       DB "  Cappuccino    x",0
+fEqRs2      DB " = Rs.",0
+fSubLbl     DB "Subtotal   : Rs.",0
+fG8Lbl      DB "GST(8%)    : Rs.",0
+fG5Lbl      DB "GST(5%)    : Rs.",0
+fGrLbl      DB "GRAND TOTAL: Rs.",0
+fThanks     DB "Thank you!",13,10,13,10,0
+fSumHdr     DB 13,10,"=== END OF DAY SUMMARY ===",13,10,0
+fCustTot    DB "Customers Served : ",0
+fSaleTot    DB "Total Sales Rs.  : ",0
+fBestItm    DB "Most Sold Item   : ",0
+fName1      DB "Veg Burger",13,10,0
+fName2      DB "Egg Burger",13,10,0
+fName3      DB "Salad Burger",13,10,0
+fName4      DB "Pizza",13,10,0
+fName5      DB "Pasta",13,10,0
+fName6      DB "Latte",13,10,0
+fName7      DB "Iced Americano",13,10,0
+fName8      DB "Cappuccino",13,10,0
+fEndDiv     DB "==========================",13,10,13,10,0
+
+.CODE
+MAIN PROC
+MOV AX, @DATA
+MOV DS, AX
+
+;--- Create orders.txt (always fresh each run) ---
+MOV AH, 3CH         ; create file
+MOV CX, 0           ; normal attributes
+LEA DX, fileName
+INT 21H
+JC SKIP_FILE        ; if error skip file (still run program)
+MOV fileHandle, AX
+
+SKIP_FILE:
+
+;==============================================================
+; NEW CUSTOMER — reset everything, get name and order type
+;==============================================================
+NEW_CUSTOMER:
+MOV qty1, 0
+MOV qty2, 0
+MOV qty3, 0
+MOV qty4, 0
+MOV qty5, 0
+MOV qty6, 0
+MOV qty7, 0
+MOV qty8, 0
+MOV subtotal, 0
+MOV gst, 0
+MOV grand, 0
+
+; Clear name buffer
+MOV CX, 20
+LEA DI, nameArr
+MOV AL, 20H
+CLR_LOOP:
+MOV [DI], AL
+INC DI
+LOOP CLR_LOOP
+MOV nameLen, 0
+
+; Get customer name
+LEA DX, namePrompt
+MOV AH, 09H
+INT 21H
+CALL READ_NAME
+
+; Get order type
+ASK_DINE:
+LEA DX, dineMsg
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JE SET_DINE
+CMP AL, 2
+JE SET_TAKE
+JMP ASK_DINE
+SET_DINE:
+MOV orderType, 1
+JMP MAIN_MENU
+SET_TAKE:
+MOV orderType, 2
+
+;==============================================================
+; MAIN MENU
+;==============================================================
+MAIN_MENU:
+LEA DX, mainMenu
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JE BURGER_SECTION
+CMP AL, 2
+JE ORDER_PIZZA
+CMP AL, 3
+JE ORDER_PASTA
+CMP AL, 4
+JE COFFEE_SECTION
+CMP AL, 5
+JE VIEW_ORDER
+CMP AL, 6
+JE GENERATE_BILL
+LEA DX, invalidMsg
+MOV AH, 09H
+INT 21H
+JMP MAIN_MENU
+
+;==============================================================
+; BURGER
+;==============================================================
+BURGER_SECTION:
+LEA DX, burgerMenu
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JE BUR_VEG
+CMP AL, 2
+JE BUR_EGG
+CMP AL, 3
+JE BUR_SAL
+JMP MAIN_MENU
+BUR_VEG:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, vegBurgerPrice
+MUL BL
+ADD subtotal, AX
+ADD qty1, BL
+JMP MAIN_MENU
+BUR_EGG:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, eggBurgerPrice
+MUL BL
+ADD subtotal, AX
+ADD qty2, BL
+JMP MAIN_MENU
+BUR_SAL:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, saladBurgerPrice
+MUL BL
+ADD subtotal, AX
+ADD qty3, BL
+JMP MAIN_MENU
+
+;==============================================================
+; PIZZA / PASTA
+;==============================================================
+ORDER_PIZZA:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, pizzaPrice
+MUL BL
+ADD subtotal, AX
+ADD qty4, BL
+JMP MAIN_MENU
+
+ORDER_PASTA:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, pastaPrice
+MUL BL
+ADD subtotal, AX
+ADD qty5, BL
+JMP MAIN_MENU
+
+;==============================================================
+; COFFEE
+;==============================================================
+COFFEE_SECTION:
+LEA DX, coffeeMenu
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JE COF_LAT
+CMP AL, 2
+JE COF_AMR
+CMP AL, 3
+JE COF_CAP
+JMP MAIN_MENU
+COF_LAT:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, lattePrice
+MUL BL
+ADD subtotal, AX
+ADD qty6, BL
+JMP MAIN_MENU
+COF_AMR:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, americanoPrice
+MUL BL
+ADD subtotal, AX
+ADD qty7, BL
+JMP MAIN_MENU
+COF_CAP:
+CALL GET_QTY
+MOV BH, 0
+MOV BL, tempQty
+MOV AX, cappuccinoPrice
+MUL BL
+ADD subtotal, AX
+ADD qty8, BL
+JMP MAIN_MENU
+
+;==============================================================
+; VIEW ORDER
+;==============================================================
+VIEW_ORDER:
+LEA DX, viewHead
+MOV AH, 09H
+INT 21H
+MOV AL, qty1
+ADD AL, qty2
+ADD AL, qty3
+ADD AL, qty4
+ADD AL, qty5
+ADD AL, qty6
+ADD AL, qty7
+ADD AL, qty8
+CMP AL, 0
+JNE V_SHOW
+LEA DX, emptyMsg
+MOV AH, 09H
+INT 21H
+JMP MAIN_MENU
+V_SHOW:
+LEA DX, divLine
+MOV AH, 09H
+INT 21H
+MOV AL, qty1
+CMP AL, 0
+JE V1
+LEA DX, lbl_vegbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty1
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty1
+MOV AX, vegBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V1: MOV AL, qty2
+CMP AL, 0
+JE V2
+LEA DX, lbl_eggbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty2
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty2
+MOV AX, eggBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V2: MOV AL, qty3
+CMP AL, 0
+JE V3
+LEA DX, lbl_salbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty3
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty3
+MOV AX, saladBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V3: MOV AL, qty4
+CMP AL, 0
+JE V4
+LEA DX, lbl_pizza
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty4
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty4
+MOV AX, pizzaPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V4: MOV AL, qty5
+CMP AL, 0
+JE V5
+LEA DX, lbl_pasta
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty5
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty5
+MOV AX, pastaPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V5: MOV AL, qty6
+CMP AL, 0
+JE V6
+LEA DX, lbl_latte
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty6
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty6
+MOV AX, lattePrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V6: MOV AL, qty7
+CMP AL, 0
+JE V7
+LEA DX, lbl_amer
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty7
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty7
+MOV AX, americanoPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V7: MOV AL, qty8
+CMP AL, 0
+JE V8
+LEA DX, lbl_cappu
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty8
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty8
+MOV AX, cappuccinoPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+V8: LEA DX, divLine
+MOV AH, 09H
+INT 21H
+LEA DX, runSubMsg
+MOV AH, 09H
+INT 21H
+MOV AX, subtotal
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+JMP MAIN_MENU
+
+;==============================================================
+; GENERATE BILL — screen
+;==============================================================
+GENERATE_BILL:
+LEA DX, billHead
+MOV AH, 09H
+INT 21H
+LEA DX, divLine
+MOV AH, 09H
+INT 21H
+
+; Order number
+LEA DX, ordNoLbl
+MOV AH, 09H
+INT 21H
+MOV AX, orderNum
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+
+; Customer name
+LEA DX, custLbl
+MOV AH, 09H
+INT 21H
+CALL SCR_PRINT_NAME
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+
+; Order type
+MOV AL, orderType
+CMP AL, 1
+JE B_DINE
+LEA DX, takeAwayLbl
+MOV AH, 09H
+INT 21H
+JMP B_ITEMS
+B_DINE:
+LEA DX, dineInLbl
+MOV AH, 09H
+INT 21H
+B_ITEMS:
+LEA DX, divLine
+MOV AH, 09H
+INT 21H
+
+MOV AL, qty1
+CMP AL, 0
+JE B1
+LEA DX, lbl_vegbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty1
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty1
+MOV AX, vegBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B1: MOV AL, qty2
+CMP AL, 0
+JE B2
+LEA DX, lbl_eggbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty2
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty2
+MOV AX, eggBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B2: MOV AL, qty3
+CMP AL, 0
+JE B3
+LEA DX, lbl_salbur
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty3
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty3
+MOV AX, saladBurgerPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B3: MOV AL, qty4
+CMP AL, 0
+JE B4
+LEA DX, lbl_pizza
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty4
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty4
+MOV AX, pizzaPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B4: MOV AL, qty5
+CMP AL, 0
+JE B5
+LEA DX, lbl_pasta
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty5
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty5
+MOV AX, pastaPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B5: MOV AL, qty6
+CMP AL, 0
+JE B6
+LEA DX, lbl_latte
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty6
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty6
+MOV AX, lattePrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B6: MOV AL, qty7
+CMP AL, 0
+JE B7
+LEA DX, lbl_amer
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty7
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty7
+MOV AX, americanoPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B7: MOV AL, qty8
+CMP AL, 0
+JE B8
+LEA DX, lbl_cappu
+MOV AH, 09H
+INT 21H
+MOV AX, 0
+MOV AL, qty8
+CALL PRINT_NUM
+LEA DX, spaceEq
+MOV AH, 09H
+INT 21H
+MOV BH, 0
+MOV BL, qty8
+MOV AX, cappuccinoPrice
+MUL BL
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+B8:
+LEA DX, divLine
+MOV AH, 09H
+INT 21H
+
+; GST
+MOV AL, orderType
+CMP AL, 1
+JE DO_GST8
+MOV AX, subtotal
+MOV BX, 5
+MUL BX
+MOV BX, 100
+DIV BX
+MOV gst, AX
+JMP SHOW_TOTALS
+DO_GST8:
+MOV AX, subtotal
+MOV BX, 8
+MUL BX
+MOV BX, 100
+DIV BX
+MOV gst, AX
+
+SHOW_TOTALS:
+MOV AX, subtotal
+ADD AX, gst
+MOV grand, AX
+
+LEA DX, subtotalMsg
+MOV AH, 09H
+INT 21H
+MOV AX, subtotal
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+
+MOV AL, orderType
+CMP AL, 1
+JE SHOW_G8
+LEA DX, gst5Msg
+MOV AH, 09H
+INT 21H
+JMP SHOW_GVAL
+SHOW_G8:
+LEA DX, gst8Msg
+MOV AH, 09H
+INT 21H
+SHOW_GVAL:
+MOV AX, gst
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+
+LEA DX, divLine
+MOV AH, 09H
+INT 21H
+LEA DX, grandMsg
+MOV AH, 09H
+INT 21H
+MOV AX, grand
+CALL PRINT_NUM
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+LEA DX, thanksMsg
+MOV AH, 09H
+INT 21H
+
+; Update day totals
+MOV AX, grand
+ADD dayTotal, AX
+INC dayCustomers
+MOV AH, 0
+MOV AL, qty1
+ADD daySold1, AX
+MOV AL, qty2
+ADD daySold2, AX
+MOV AL, qty3
+ADD daySold3, AX
+MOV AL, qty4
+ADD daySold4, AX
+MOV AL, qty5
+ADD daySold5, AX
+MOV AL, qty6
+ADD daySold6, AX
+MOV AL, qty7
+ADD daySold7, AX
+MOV AL, qty8
+ADD daySold8, AX
+
+; Write to file
+CALL WRITE_TO_FILE
+
+INC orderNum
+
+; Next customer or end day
+ASK_NEXT:
+LEA DX, nextMsg
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JE NEW_CUSTOMER
+CMP AL, 2
+JE END_DAY
+JMP ASK_NEXT
+
+END_DAY:
+CALL WRITE_SUMMARY
+MOV AH, 3EH
+MOV BX, fileHandle
+INT 21H
+MOV AH, 4CH
+INT 21H
+
+MAIN ENDP
+
+;==============================================================
+; WRITE_TO_FILE — writes one customer record
+;==============================================================
+WRITE_TO_FILE PROC
+; Divider
+LEA DX, fDiv
+CALL FW
+
+; Header
+LEA DX, fRecHdr
+CALL FW
+
+; Order number
+LEA DX, fOrdLbl
+CALL FW
+MOV AX, orderNum
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; Customer name
+LEA DX, fCustLbl
+CALL FW
+MOV AH, 0
+MOV AL, nameLen
+MOV CX, AX
+CMP CX, 0
+JE WF_SKIPNAME
+MOV BX, fileHandle
+LEA DX, nameArr
+MOV AH, 40H
+INT 21H
+WF_SKIPNAME:
+; Always write CRLF after name via FW (restores BX=fileHandle correctly)
+LEA DX, crlf
+CALL FW
+; Small separator line after name section
+; (nothing extra needed)
+
+; Order type
+MOV AL, orderType
+CMP AL, 1
+JE WF_DINE
+LEA DX, fTakeLbl
+CALL FW
+JMP WF_ITEMS
+WF_DINE:
+LEA DX, fDineLbl
+CALL FW
+
+WF_ITEMS:
+; Each item: only write if qty > 0
+MOV AL, qty1
+CMP AL, 0
+JE WI1
+LEA DX, fVegL
+CALL FW
+MOV AH, 0
+MOV AL, qty1
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty1
+MOV AX, vegBurgerPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI1:MOV AL, qty2
+CMP AL, 0
+JE WI2
+LEA DX, fEggL
+CALL FW
+MOV AH, 0
+MOV AL, qty2
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty2
+MOV AX, eggBurgerPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI2:MOV AL, qty3
+CMP AL, 0
+JE WI3
+LEA DX, fSalL
+CALL FW
+MOV AH, 0
+MOV AL, qty3
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty3
+MOV AX, saladBurgerPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI3:MOV AL, qty4
+CMP AL, 0
+JE WI4
+LEA DX, fPizL
+CALL FW
+MOV AH, 0
+MOV AL, qty4
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty4
+MOV AX, pizzaPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI4:MOV AL, qty5
+CMP AL, 0
+JE WI5
+LEA DX, fPasL
+CALL FW
+MOV AH, 0
+MOV AL, qty5
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty5
+MOV AX, pastaPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI5:MOV AL, qty6
+CMP AL, 0
+JE WI6
+LEA DX, fLatL
+CALL FW
+MOV AH, 0
+MOV AL, qty6
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty6
+MOV AX, lattePrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI6:MOV AL, qty7
+CMP AL, 0
+JE WI7
+LEA DX, fAmrL
+CALL FW
+MOV AH, 0
+MOV AL, qty7
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty7
+MOV AX, americanoPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI7:MOV AL, qty8
+CMP AL, 0
+JE WI8
+LEA DX, fCapL
+CALL FW
+MOV AH, 0
+MOV AL, qty8
+CALL FW_NUM
+LEA DX, fEqRs2
+CALL FW
+MOV BH, 0
+MOV BL, qty8
+MOV AX, cappuccinoPrice
+MUL BL
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+WI8:
+; Subtotal
+LEA DX, fSubLbl
+CALL FW
+MOV AX, subtotal
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; GST
+MOV AL, orderType
+CMP AL, 1
+JE WF_G8
+LEA DX, fG5Lbl
+CALL FW
+JMP WF_GVAL
+WF_G8:
+LEA DX, fG8Lbl
+CALL FW
+WF_GVAL:
+MOV AX, gst
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; Grand total
+LEA DX, fGrLbl
+CALL FW
+MOV AX, grand
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; Thank you
+LEA DX, fThanks
+CALL FW
+
+RET
+WRITE_TO_FILE ENDP
+
+;==============================================================
+; WRITE_SUMMARY — end of day report
+;==============================================================
+WRITE_SUMMARY PROC
+LEA DX, fSumHdr
+CALL FW
+
+; Customers
+LEA DX, fCustTot
+CALL FW
+MOV AX, dayCustomers
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; Total sales
+LEA DX, fSaleTot
+CALL FW
+MOV AX, dayTotal
+CALL FW_NUM
+LEA DX, crlf
+CALL FW
+
+; Most sold item — find max
+MOV AX, daySold1
+MOV BX, 1
+CMP daySold2, AX
+JBE C3
+MOV AX, daySold2
+MOV BX, 2
+C3: CMP daySold3, AX
+JBE C4
+MOV AX, daySold3
+MOV BX, 3
+C4: CMP daySold4, AX
+JBE C5
+MOV AX, daySold4
+MOV BX, 4
+C5: CMP daySold5, AX
+JBE C6
+MOV AX, daySold5
+MOV BX, 5
+C6: CMP daySold6, AX
+JBE C7
+MOV AX, daySold6
+MOV BX, 6
+C7: CMP daySold7, AX
+JBE C8
+MOV AX, daySold7
+MOV BX, 7
+C8: CMP daySold8, AX
+JBE CBEST
+MOV BX, 8
+CBEST:
+LEA DX, fBestItm
+CALL FW
+CMP BX, 1
+JE WS1
+CMP BX, 2
+JE WS2
+CMP BX, 3
+JE WS3
+CMP BX, 4
+JE WS4
+CMP BX, 5
+JE WS5
+CMP BX, 6
+JE WS6
+CMP BX, 7
+JE WS7
+WS8:LEA DX, fName8
+CALL FW
+JMP WSEND
+WS1:LEA DX, fName1
+CALL FW
+JMP WSEND
+WS2:LEA DX, fName2
+CALL FW
+JMP WSEND
+WS3:LEA DX, fName3
+CALL FW
+JMP WSEND
+WS4:LEA DX, fName4
+CALL FW
+JMP WSEND
+WS5:LEA DX, fName5
+CALL FW
+JMP WSEND
+WS6:LEA DX, fName6
+CALL FW
+JMP WSEND
+WS7:LEA DX, fName7
+CALL FW
+WSEND:
+LEA DX, fEndDiv
+CALL FW
+RET
+WRITE_SUMMARY ENDP
+
+;==============================================================
+; FW — file write: null-terminated string at DS:DX
+;      Step 1: scan to find length (CX)
+;      Step 2: one single INT 21H writes whole string at once
+;==============================================================
+FW PROC
+PUSH AX
+PUSH BX
+PUSH CX
+PUSH DX
+PUSH SI
+MOV SI, DX          ; SI = start of string, DX kept for write
+MOV CX, 0           ; length counter
+FW_SCAN:
+MOV AL, [SI]        ; read byte
+CMP AL, 0           ; null terminator?
+JE FW_WRITE         ; yes - we know length now
+INC SI
+INC CX
+JMP FW_SCAN
+FW_WRITE:
+CMP CX, 0           ; nothing to write?
+JE FW_DONE
+MOV BX, fileHandle  ; file handle
+MOV AH, 40H         ; write to file
+INT 21H             ; one call writes entire string
+FW_DONE:
+POP SI
+POP DX
+POP CX
+POP BX
+POP AX
+RET
+FW ENDP
+
+;==============================================================
+; FW_NUM — write AX as decimal digits to file
+;==============================================================
+FW_NUM PROC
+PUSH AX
+PUSH BX
+PUSH CX
+PUSH DX
+MOV CX, 0
+MOV BX, 10
+FWN_D:
+MOV DX, 0
+DIV BX
+PUSH DX
+INC CX
+CMP AX, 0
+JNE FWN_D
+FWN_W:
+POP AX
+ADD AL, 30H
+MOV numByte, AL
+PUSH CX
+MOV BX, fileHandle
+LEA DX, numByte
+MOV CX, 1
+MOV AH, 40H
+INT 21H
+POP CX
+LOOP FWN_W
+POP DX
+POP CX
+POP BX
+POP AX
+RET
+FW_NUM ENDP
+
+;==============================================================
+; SCR_PRINT_NAME — print nameArr to screen
+;==============================================================
+SCR_PRINT_NAME PROC
+MOV AH, 0
+MOV AL, nameLen
+CMP AL, 0
+JE SPN_DONE
+MOV CX, AX
+LEA SI, nameArr
+SPN_L:
+MOV DL, [SI]
+MOV AH, 02H
+INT 21H
+INC SI
+LOOP SPN_L
+SPN_DONE:
+RET
+SCR_PRINT_NAME ENDP
+
+;==============================================================
+; READ_NAME — reads chars into nameArr until Enter
+;==============================================================
+READ_NAME PROC
+LEA DI, nameArr
+MOV BL, 0
+RNL:
+MOV AH, 01H
+INT 21H
+CMP AL, 13       ; Enter
+JE RN_DONE
+CMP BL, 20       ; max 20 chars
+JGE RNL
+MOV [DI], AL
+INC DI
+INC BL
+JMP RNL
+RN_DONE:
+MOV nameLen, BL
+LEA DX, newline
+MOV AH, 09H
+INT 21H
+RET
+READ_NAME ENDP
+
+;==============================================================
+; GET_QTY — validated 1-9 input
+;==============================================================
+GET_QTY PROC
+GQL:
+LEA DX, qtyMsg
+MOV AH, 09H
+INT 21H
+MOV AH, 01H
+INT 21H
+SUB AL, 30H
+CMP AL, 1
+JL GQ_BAD
+CMP AL, 9
+JG GQ_BAD
+MOV tempQty, AL
+RET
+GQ_BAD:
+LEA DX, invalidMsg
+MOV AH, 09H
+INT 21H
+JMP GQL
+GET_QTY ENDP
+
+;==============================================================
+; PRINT_NUM — print AX as decimal to screen
+;==============================================================
+PRINT_NUM PROC
+MOV CX, 0
+MOV BX, 10
+PND:
+MOV DX, 0
+DIV BX
+PUSH DX
+INC CX
+CMP AX, 0
+JNE PND
+PNP:
+POP DX
+ADD DL, 30H
+MOV AH, 02H
+INT 21H
+LOOP PNP
+RET
+PRINT_NUM ENDP
+
+END MAIN
+
